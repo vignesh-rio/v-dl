@@ -1,4 +1,4 @@
-qtorrent
+python-qbittorrent
 ariac
 youtube-dl
 m3u8
