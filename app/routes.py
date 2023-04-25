@@ -1,76 +1,78 @@
-from flask import render_template, redirect, url_for, flash, jsonify
-from app import app
-from app.forms import DownloadForm
-from qtorrent import TorrentClient
-import youtube_dl
 import os
-import requests
+import time
+import shutil
+import urllib.parse
+import youtube_dl
+import m3u8
+import qbittorrentapi
+from flask import Flask, render_template, request, jsonify, current_app, url_for
 
-@app.route('/', methods=['GET', 'POST'])
+app = Flask(__name__)
+
+@app.route('/')
 def index():
-    # Initialize form
-    download_form = DownloadForm()
+    return render_template('index.html')
 
-    # Handle form submission
-    if download_form.validate_on_submit():
-        # Get video URL from form
-        video_url = download_form.url.data
+@app.route('/download', methods=['POST'])
+def download():
+    url = request.form['url']
+    path = os.path.join(current_app.config['DOWNLOAD_PATH'], 'video.mp4')
+    try:
+        if 'youtube.com' in url:
+            ydl_opts = {'outtmpl': path}
+            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        else:
+            # Connect to the qBittorrent client
+            qbt_client = qbittorrentapi.Client(host='localhost', port=8080)
+            qbt_client.login('admin', 'adminadmin')
 
-        # Download video and return URL
-        video_url = download_video(video_url)
+            # Add the magnet URL to the client
+            qbt_client.torrents_add(urls=url)
 
-        # Redirect to video download page
-        return redirect(url_for('download', video_url=video_url))
+            # Wait for the torrent to finish downloading
+            while not any(t.progress == 1.0 for t in qbt_client.torrents_info()):
+                time.sleep(1)
 
-    # Render home page
-    return render_template('index.html', download_form=download_form)
+            # Save the downloaded video to the download path
+            for torrent in qbt_client.torrents_info():
+                if torrent.name.endswith('.mp4'):
+                    with open(path, 'wb') as f:
+                        f.write(qbt_client.torrents_files(torrent.hash)[0].content)
 
-@app.route('/download/<video_url>', methods=['GET'])
-def download(video_url):
-    # Render download page
-    return render_template('download.html', video_url=video_url)
+        # Return the URL where the downloaded video can be accessed
+        url = url_for('static', filename='downloads/video.mp4')
+        return jsonify({'status': 'success', 'url': url})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
-@app.route('/progress/<video_url>', methods=['GET'])
-def progress(video_url):
-    # Get progress of video download
-    progress = get_download_progress(video_url)
+@app.route('/download-m3u8', methods=['POST'])
+def download_m3u8():
+    url = request.form['url']
+    path = os.path.join(current_app.config['DOWNLOAD_PATH'], 'video.mp4')
+    try:
+        playlist = m3u8.load(url)
+        segments = [urllib.parse.urljoin(url, segment.uri) for segment in playlist.segments]
 
-    # Return progress as JSON
-    return jsonify(progress)
+        with open(path, 'wb') as f:
+            for segment_url in segments:
+                segment_data = urllib.request.urlopen(segment_url).read()
+                f.write(segment_data)
 
-def download_video(video_url):
-    # Create qtorrent client
-    client = TorrentClient()
+        # Return the URL where the downloaded video can be accessed
+        url = url_for('static', filename='downloads/video.mp4')
+        return jsonify({'status': 'success', 'url': url})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
-    # Download video using youtube-dl
-    with youtube_dl.YoutubeDL({'outtmpl': 'video.mp4'}) as ydl:
-        ydl.download([video_url])
-
-    # Add video file to qtorrent client and start download
-    torrent = client.add_torrent('video.mp4')
-    torrent.start()
-
-    # Get download URL
-    download_url = torrent.get_download_url()
-
-    # Return download URL
-    return download_url
-
-def get_download_progress(video_url):
-    # Check if video file exists
-    if not os.path.isfile('video.mp4'):
-        return {'progress': 0}
-
-    # Get size of video file
-    video_size = os.path.getsize('video.mp4')
-
-    # Get progress of video download from qtorrent client
-    client = TorrentClient()
-    torrent = client.get_torrent('video.mp4')
-    progress = torrent.get_progress()
-
-    # Calculate download progress as a percentage
-    download_progress = round(progress / video_size * 100)
-
-    # Return progress as a dictionary
-    return {'progress': download_progress}
+@app.route('/delete', methods=['POST'])
+def delete():
+    path = os.path.join(current_app.config['DOWNLOAD_PATH'], 'video.mp4')
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            return jsonify({'status': 'success'})
+        else:
+            return jsonify({'status': 'error', 'message': 'File not found'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
