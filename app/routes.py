@@ -5,7 +5,7 @@ import urllib.parse
 import youtube_dl
 import m3u8
 from flask import Flask, render_template, request, jsonify, current_app, url_for
-from aria2p import Client, DownloadInput
+from aria2p.client import DownloadInput
 
 app = Flask(__name__)
 
