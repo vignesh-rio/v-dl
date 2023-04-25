@@ -1,5 +1,5 @@
 python-qbittorrent
-ariac
+aria2p
 youtube-dl
 m3u8
 Flask
