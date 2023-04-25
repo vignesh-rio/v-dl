@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h1>Video Download Complete!</h1>
+  <p>Download URL: <a href="{{ video_url }}">{{ video_url }}</a></p>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    function updateProgress() {
+      var progress_url = "{{ url_for('progress', video_url=video_url) }}";
+      fetch(progress_url)
+        .then(response => response.json())
+        .then(data => {
+          var progress = data.progress;
+          if (progress >= 100) {
+            window.location.href = "{{ url_for('download', video_url=video_url) }}";
+          } else {
+            var progress_bar = document.getElementById("progress-bar");
+            progress_bar.style.width = progress + "%";
+          }
+        });
+    }
+
+    setInterval(updateProgress, 1000);
+  </script>
+{% endblock %}
