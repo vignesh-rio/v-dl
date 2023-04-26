@@ -1,4 +1,4 @@
-python-qbittorrent
+qbittorrentapi
 aria2p
 youtube-dl
 m3u8
