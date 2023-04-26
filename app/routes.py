@@ -4,7 +4,8 @@ import shutil
 import urllib.parse
 import youtube_dl
 import m3u8
-import qbittorrentapi
+import qbittorrent
+
 from flask import Flask, render_template, request, jsonify, current_app, url_for
 
 app = Flask(__name__)
@@ -24,21 +25,21 @@ def download():
                 ydl.download([url])
         else:
             # Connect to the qBittorrent client
-            qbt_client = qbittorrentapi.Client(host='localhost', port=8080)
+            qbt_client = qbittorrent.Client(host='localhost', port=8080)
             qbt_client.login('admin', 'adminadmin')
 
             # Add the magnet URL to the client
-            qbt_client.torrents_add(urls=url)
+            qbt_client.download_from_link(url)
 
             # Wait for the torrent to finish downloading
-            while not any(t.progress == 1.0 for t in qbt_client.torrents_info()):
+            while not any(t['progress'] == 1.0 for t in qbt_client.torrents()):
                 time.sleep(1)
 
             # Save the downloaded video to the download path
-            for torrent in qbt_client.torrents_info():
-                if torrent.name.endswith('.mp4'):
+            for torrent in qbt_client.torrents():
+                if torrent['name'].endswith('.mp4'):
                     with open(path, 'wb') as f:
-                        f.write(qbt_client.torrents_files(torrent.hash)[0].content)
+                        f.write(qbt_client.download_from_torrent(torrent['hash'])[0])
 
         # Return the URL where the downloaded video can be accessed
         url = url_for('static', filename='downloads/video.mp4')
