@@ -4,8 +4,8 @@ import shutil
 import urllib.parse
 import youtube_dl
 import m3u8
+import qbittorrentapi
 from flask import Flask, render_template, request, jsonify, current_app, url_for
-from aria2p.client import DownloadInput
 
 app = Flask(__name__)
 
@@ -23,28 +23,25 @@ def download():
             with youtube_dl.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
         else:
-            # Connect to the Aria2 client
-            aria2_client = Client(
-                host="http://localhost",
-                port=6800,
-                secret="",
-            )
+            # Connect to the qBittorrent client
+            qbt_client = qbittorrentapi.Client(host='localhost', port=8080)
+            qbt_client.login('admin', 'adminadmin')
 
-            # Add the URL to the client
-            download = aria2_client.add(DownloadInput(url))
+            # Add the magnet URL to the client
+            qbt_client.torrents_add(urls=url)
 
-            # Wait for the download to finish
-            while download.is_active:
+            # Wait for the torrent to finish downloading
+            while not any(t.progress == 1.0 for t in qbt_client.torrents_info()):
                 time.sleep(1)
 
-            # Move the downloaded video to the download path
-            filename = os.path.basename(download.files[0].path)
-            src_path = download.files[0].path
-            dest_path = os.path.join(current_app.config['DOWNLOAD_PATH'], filename)
-            shutil.move(src_path, dest_path)
+            # Save the downloaded video to the download path
+            for torrent in qbt_client.torrents_info():
+                if torrent.name.endswith('.mp4'):
+                    with open(path, 'wb') as f:
+                        f.write(qbt_client.torrents_files(torrent.hash)[0].content)
 
         # Return the URL where the downloaded video can be accessed
-        url = url_for('static', filename=f'downloads/{filename}')
+        url = url_for('static', filename='downloads/video.mp4')
         return jsonify({'status': 'success', 'url': url})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
